@@ -4,10 +4,7 @@
 
 ## 安装（第一次）
 
-1. 下载 `release/` 里对应你电脑芯片的压缩包：
-   - Apple 芯片（M1/M2/M3/M4…）：`红蛋-Mac-Apple芯片.zip`
-   - Intel 芯片：`红蛋-Mac-Intel芯片.zip`
-   - 不确定？点屏幕左上角  →「关于本机」，看「芯片」那一行。
+1. 下载 `release/红蛋-Mac-Apple芯片.zip`（只支持 Apple 芯片 M1/M2/M3/M4… 的 Mac）。
 2. 双击 zip 解压，把 `红蛋.app` 拖进「应用程序」文件夹。
 3. 双击打开。因为没有苹果开发者证书，第一次会提示"无法验证开发者"：
    - 点「完成」/「好」关掉提示；
@@ -26,7 +23,8 @@
 ```bash
 npm install
 npm start          # 运行
-npm run dist:mac   # 打包 Mac App 到 dist/
+npm run dist:mac   # 打包 Apple 芯片版 Mac App 到 dist/
+RCODESIGN=/path/to/rcodesign npm run release:mac   # 打包 + 本地签名 + 压缩到 release/
 ```
 
 自动自测（在 Linux 虚拟屏幕上跑）：

@@ -6,8 +6,9 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist:mac": "electron-packager . 红蛋 --platform=darwin --arch=arm64,x64 --out=dist --overwrite --app-bundle-id=com.yyq.hongdan --icon=build/icon.icns --ignore=^/dist --ignore=^/test --ignore=^/scripts --ignore=^/build",
-    "test": "HONGDAN_TEST=1 electron . --no-sandbox"
+    "dist:mac": "electron-packager . 红蛋 --platform=darwin --arch=arm64 --out=dist --overwrite --app-bundle-id=com.yyq.hongdan --icon=build/icon.icns --ignore=^/dist --ignore=^/test --ignore=^/scripts --ignore=^/build --ignore=^/release --ignore=^/README.md",
+    "test": "HONGDAN_TEST=1 electron . --no-sandbox",
+    "release:mac": "npm run dist:mac && scripts/sign-and-zip.sh"
   },
   "license": "MIT",
   "devDependencies": {
