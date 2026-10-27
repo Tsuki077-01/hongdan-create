@@ -21,27 +21,38 @@ html, body {
   position: absolute;
   left: 0;
   top: 0;
-  transform-origin: 50px 74px;
   will-change: transform;
   pointer-events: none;
   overflow: visible;
 }
-/* 只有画出来的部分接收鼠标，空白处点穿 */
-#egg * { pointer-events: visiblePainted; }
+/* 只有画出来的蛋接收鼠标，空白处点穿；固定光影层不挡鼠标 */
+#egg .rot * { pointer-events: visiblePainted; }
+#egg .fixed, #egg .fixed * { pointer-events: none; }
 
 .pupil {
   transform-box: fill-box;
   transform-origin: center;
-  transition: transform 90ms ease-in;
+  transition: transform 110ms ease-in;
 }
-#egg.blink .pupil { transform: scaleY(0.12); }
-#pupils { transition: transform 400ms ease-in-out; }
+#egg.blink[data-eyes="normal"] .pupil { transform: scaleY(0.12); }
+#egg[data-eyes="scared"] .pupil { transform: scale(0.55); }  /* 吓得眼珠缩小 */
+#pupils { transition: transform 160ms ease-out; }
 
-#squint, #xeyes { display: none; }
-#egg.squint #pupils, #egg.ko #pupils { display: none; }
-#egg.squint #squint { display: inline; }
-#egg.ko #squint { display: none; }
-#egg.ko #xeyes { display: inline; }
+/* 眼泪一滴滴往下掉（只在哭的时候显示，不显示时不耗电） */
+.tear {
+  transform-box: fill-box;
+  transform-origin: 50% 0;
+  animation: tear 1.5s ease-in infinite;
+  opacity: 0;
+}
+.tear.t2 { animation-delay: 0.45s; }
+.tear.t3 { animation-delay: 0.8s; }
+.tear.t4 { animation-delay: 1.15s; }
+@keyframes tear {
+  0%   { transform: translateY(-2px) scale(0.3); opacity: 0; }
+  15%  { transform: translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateY(20px) scale(0.9); opacity: 0; }
+}
 
 #shadow {
   position: absolute;
@@ -78,7 +89,7 @@ html, body {
   transition: opacity 160ms ease-out, transform 200ms cubic-bezier(.3, 1.6, .5, 1);
   pointer-events: none;
 }
-#bubble.long { white-space: normal; width: 210px; }
+#bubble.long { white-space: pre-line; }
 #bubble::after {
   content: "";
   position: absolute;

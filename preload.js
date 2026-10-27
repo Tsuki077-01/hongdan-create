@@ -9,7 +9,9 @@ contextBridge.exposeInMainWorld('pet', {
   dragStart: (ox, oy) => ipcRenderer.send('drag-start', ox, oy),
   dragEnd: () => ipcRenderer.invoke('drag-end'),
   koState: (v) => ipcRenderer.send('ko-state', v),
-  onAction: (fn) => ipcRenderer.on('action', (_e, a) => fn(a)),
+  log: (msg) => ipcRenderer.send('log', String(msg)),
+  onAction: (fn) => ipcRenderer.on('action', (_e, a, arg) => fn(a, arg)),
+  onCursor: (fn) => ipcRenderer.on('cursor', (_e, c) => fn(c)),
   onMuted: (fn) => ipcRenderer.on('muted', (_e, m) => fn(m)),
   onScreenChanged: (fn) => ipcRenderer.on('screen-changed', () => fn()),
 });

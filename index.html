@@ -11,6 +11,7 @@
   <div id="ko">K.O.</div>
   <div id="shadow"></div>
   <div id="wrap">
+    <!-- 整颗蛋：带 rot 的组跟着滚动转，fixed 的组（暗面、高光）永远不转 -->
     <svg id="egg" width="100" height="122" viewBox="0 0 100 122" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <!-- 手绘感：轻微扰动描边 -->
@@ -18,53 +19,103 @@
           <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="7" result="n"/>
           <feDisplacementMap in="SourceGraphic" in2="n" scale="2.6" xChannelSelector="R" yChannelSelector="G"/>
         </filter>
-        <clipPath id="eggClip">
-          <path d="M50 5 C 75 5, 94 45, 94 76 C 94 102, 74 118, 50 118 C 26 118, 6 102, 6 76 C 6 45, 25 5, 50 5 Z"/>
+        <!-- 固定光影层的裁剪：跟着蛋实时旋转的蛋形 -->
+        <clipPath id="lightClip">
+          <path class="clip-rot" d="M50 5 C 75 5, 94 45, 94 76 C 94 102, 74 118, 50 118 C 26 118, 6 102, 6 76 C 6 45, 25 5, 50 5 Z"/>
         </clipPath>
       </defs>
 
-      <g filter="url(#sketch)">
-        <!-- 蛋身 -->
-        <path id="body" d="M50 5 C 75 5, 94 45, 94 76 C 94 102, 74 118, 50 118 C 26 118, 6 102, 6 76 C 6 45, 25 5, 50 5 Z"
-              fill="#F09A7A"/>
-        <g clip-path="url(#eggClip)">
-          <ellipse cx="50" cy="122" rx="58" ry="24" fill="#E3806A" opacity="0.45"/>
+      <!-- 转动层 1：蛋身底色 -->
+      <g class="rot">
+        <path id="body" filter="url(#sketch)" d="M50 5 C 75 5, 94 45, 94 76 C 94 102, 74 118, 50 118 C 26 118, 6 102, 6 76 C 6 45, 25 5, 50 5 Z" fill="#F09A7A"/>
+      </g>
+
+      <!-- 固定层 1：右下方的暗面（光从左上来） -->
+      <g class="fixed" clip-path="url(#lightClip)">
+        <ellipse cx="64" cy="114" rx="52" ry="22" fill="#E3806A" opacity="0.5"/>
+      </g>
+
+      <!-- 转动层 2：描边、腮红、眼镜、表情 -->
+      <g class="rot">
+        <g filter="url(#sketch)">
+          <path d="M50 5 C 75 5, 94 45, 94 76 C 94 102, 74 118, 50 118 C 26 118, 6 102, 6 76 C 6 45, 25 5, 50 5 Z"
+                fill="none" stroke="#8B3A1E" stroke-width="3.6" stroke-linejoin="round"/>
+          <ellipse cx="21" cy="89" rx="8" ry="4.6" fill="#F7A0AE" opacity="0.8"/>
+          <ellipse cx="79" cy="89" rx="8" ry="4.6" fill="#F7A0AE" opacity="0.8"/>
+          <g fill="none" stroke="#8B3A1E" stroke-width="2.8" stroke-linecap="round">
+            <circle cx="34" cy="70" r="12.5" fill="#FFFAF5" fill-opacity="0.85"/>
+            <circle cx="66" cy="70" r="12.5" fill="#FFFAF5" fill-opacity="0.85"/>
+            <path d="M46.5 69 Q50 64.5 53.5 69"/>
+            <path d="M21.6 67.5 L12 64.5"/>
+            <path d="M78.4 67.5 L88 64.5"/>
+          </g>
         </g>
-        <path d="M24 38 Q30 22 41 15" fill="none" stroke="#FFF4EC" stroke-width="4.5" stroke-linecap="round" opacity="0.7"/>
-        <path d="M50 5 C 75 5, 94 45, 94 76 C 94 102, 74 118, 50 118 C 26 118, 6 102, 6 76 C 6 45, 25 5, 50 5 Z"
-              fill="none" stroke="#8B3A1E" stroke-width="3.6" stroke-linejoin="round"/>
 
-        <!-- 腮红 -->
-        <ellipse cx="21" cy="89" rx="8" ry="4.6" fill="#F7A0AE" opacity="0.8"/>
-        <ellipse cx="79" cy="89" rx="8" ry="4.6" fill="#F7A0AE" opacity="0.8"/>
-
-        <!-- 连体圆框眼镜 -->
-        <g fill="none" stroke="#8B3A1E" stroke-width="2.8" stroke-linecap="round">
-          <circle cx="34" cy="70" r="12.5" fill="#FFFAF5" fill-opacity="0.85"/>
-          <circle cx="66" cy="70" r="12.5" fill="#FFFAF5" fill-opacity="0.85"/>
-          <path d="M46.5 69 Q50 64.5 53.5 69"/>
-          <path d="M21.6 67.5 L12 64.5"/>
-          <path d="M78.4 67.5 L88 64.5"/>
+        <!-- 眼睛（同一时间只显示一套） -->
+        <g id="eyes">
+          <g id="pupils" data-v="normal scared">
+            <circle class="pupil" cx="34" cy="70.5" r="3.3" fill="#1E120D"/>
+            <circle class="pupil" cx="66" cy="70.5" r="3.3" fill="#1E120D"/>
+          </g>
+          <g data-v="squint" style="display:none" fill="none" stroke="#1E120D" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M30 66 L37 70.5 L30 75"/>
+            <path d="M70 66 L63 70.5 L70 75"/>
+          </g>
+          <g data-v="ko" style="display:none" fill="none" stroke="#1E120D" stroke-width="2.4" stroke-linecap="round">
+            <path d="M29.5 65.5 L38.5 74.5 M38.5 65.5 L29.5 74.5"/>
+            <path d="M61.5 65.5 L70.5 74.5 M70.5 65.5 L61.5 74.5"/>
+          </g>
+          <g data-v="cry" style="display:none">
+            <!-- 泪汪汪：大黑眼珠 + 亮点，下眼眶一汪水 -->
+            <path d="M23.5 76 Q34 83 44.5 76 Q42 82.5 34 82.5 Q26 82.5 23.5 76 Z" fill="#9FD3F2" opacity="0.85"/>
+            <path d="M55.5 76 Q66 83 76.5 76 Q74 82.5 66 82.5 Q58 82.5 55.5 76 Z" fill="#9FD3F2" opacity="0.85"/>
+            <circle cx="34" cy="71" r="4.6" fill="#1E120D"/>
+            <circle cx="66" cy="71" r="4.6" fill="#1E120D"/>
+            <circle cx="35.6" cy="69.2" r="1.6" fill="#fff"/>
+            <circle cx="67.6" cy="69.2" r="1.6" fill="#fff"/>
+            <circle cx="32.6" cy="72.8" r="0.8" fill="#fff"/>
+            <circle cx="64.6" cy="72.8" r="0.8" fill="#fff"/>
+            <!-- 一滴滴往下掉的眼泪 -->
+            <g fill="#8CCBF0" stroke="#5FA8D6" stroke-width="0.8">
+              <path class="tear" d="M33 83 Q30.6 87 33 88.6 Q35.4 87 33 83 Z"/>
+              <path class="tear t2" d="M67 83 Q64.6 87 67 88.6 Q69.4 87 67 83 Z"/>
+              <path class="tear t3" d="M36 83 Q33.6 87 36 88.6 Q38.4 87 36 83 Z"/>
+              <path class="tear t4" d="M64 83 Q61.6 87 64 88.6 Q66.4 87 64 83 Z"/>
+            </g>
+          </g>
         </g>
 
-        <!-- 小弧线笑 -->
-        <path d="M45 94 Q50 99 55 94" fill="none" stroke="#8B3A1E" stroke-width="2.6" stroke-linecap="round"/>
+        <!-- 眉毛：只在害怕、哭的时候出现 -->
+        <g id="brows" fill="none" stroke="#8B3A1E" stroke-width="2.4" stroke-linecap="round">
+          <g data-v="none"></g>
+          <g data-v="scared" style="display:none">
+            <path d="M25 50 Q33 44.5 41 49"/>
+            <path d="M59 49 Q67 44.5 75 50"/>
+            <path d="M85 44 Q81.5 50 85 52 Q88.5 50 85 44 Z" fill="#BFE3F7" stroke="#6FB2DB" stroke-width="1"/>
+          </g>
+          <g data-v="sad" style="display:none">
+            <path d="M25 53.5 Q33 53 40 47.5"/>
+            <path d="M60 47.5 Q67 53 75 53.5"/>
+          </g>
+        </g>
+
+        <!-- 嘴 -->
+        <g id="mouth" stroke="#8B3A1E" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none">
+          <path data-v="smile" d="M45 94 Q50 99 55 94"/>
+          <g data-v="open" style="display:none">
+            <path d="M44.5 92.5 Q50 91.5 55.5 92.5 Q55 100.5 50 100.5 Q45 100.5 44.5 92.5 Z" fill="#7A2A16" stroke-width="2.2"/>
+            <ellipse cx="50" cy="98.2" rx="2.8" ry="1.6" fill="#F59AA6" stroke="none"/>
+          </g>
+          <path data-v="wavy" style="display:none" d="M42.5 97 Q44.8 93.2 47.2 95.6 T52 94.4 T57.2 91.6"/>
+          <path data-v="frown" style="display:none" d="M44.5 98.5 Q50 92.5 55.5 98.5"/>
+          <ellipse data-v="o" style="display:none" cx="50" cy="96" rx="2.9" ry="3.4" fill="#7A2A16" stroke-width="2.2"/>
+        </g>
       </g>
 
-      <!-- 眼睛：正常 -->
-      <g id="pupils">
-        <circle class="pupil" cx="34" cy="70.5" r="3.3" fill="#1E120D"/>
-        <circle class="pupil" cx="66" cy="70.5" r="3.3" fill="#1E120D"/>
-      </g>
-      <!-- 眼睛：被揍时 > < -->
-      <g id="squint" fill="none" stroke="#1E120D" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M30 66 L37 70.5 L30 75"/>
-        <path d="M70 66 L63 70.5 L70 75"/>
-      </g>
-      <!-- 眼睛：K.O. 叉叉 -->
-      <g id="xeyes" fill="none" stroke="#1E120D" stroke-width="2.4" stroke-linecap="round">
-        <path d="M29.5 65.5 L38.5 74.5 M38.5 65.5 L29.5 74.5"/>
-        <path d="M61.5 65.5 L70.5 74.5 M70.5 65.5 L61.5 74.5"/>
+      <!-- 固定层 2：左上方的高光，永远不转 -->
+      <g class="fixed" clip-path="url(#lightClip)" fill="none" stroke="#FFF4EC" stroke-linecap="round" opacity="0.75">
+        <path d="M19 58 Q22 44 34 36" stroke-width="4.5"/>
+        <circle cx="40.5" cy="32.5" r="1.4" stroke-width="2.6"/>
       </g>
     </svg>
   </div>

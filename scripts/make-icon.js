@@ -15,7 +15,7 @@ app.whenReady().then(async () => {
   const win = new BrowserWindow({ width: 1024, height: 1024, show: false, transparent: true, frame: false, useContentSize: true });
   const page = `<html><body style="margin:0;width:1024px;height:1024px;display:flex;align-items:center;justify-content:center;background:transparent">
     <div style="width:824px;height:824px;border-radius:185px;background:linear-gradient(#FFF6EE,#FDE3D3);display:flex;align-items:center;justify-content:center">
-    <style>#squint,#xeyes{display:none}</style>${svg}</div></body></html>`;
+    ${svg}</div></body></html>`;
   await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(page));
   await new Promise((r) => setTimeout(r, 300));
   const big = await win.webContents.capturePage({ x: 0, y: 0, width: 1024, height: 1024 });

@@ -35,6 +35,18 @@ function rollDay() {
   }
 }
 
+// ---------- 错误日志：~/Library/Application Support/红蛋/error.log ----------
+function logError(msg) {
+  try {
+    const p = path.join(app.getPath('userData'), 'error.log');
+    if (fs.existsSync(p) && fs.statSync(p).size > 512 * 1024) fs.renameSync(p, p + '.old');
+    fs.appendFileSync(p, `[${new Date().toISOString()}] ${msg}\n`);
+  } catch (_) {}
+  if (TEST) console.log('[log]', msg);
+}
+// 出错只记日志，不弹窗打扰
+process.on('uncaughtException', (e) => logError('主进程错误：' + (e && e.stack || e)));
+
 // ---------- 窗口 ----------
 function createWindow() {
   const wa = screen.getPrimaryDisplay().workArea;
@@ -94,7 +106,7 @@ function menuAction(name) {
     rollDay();
     store.hits += 1;
     saveStore();
-    send('action', 'punch');
+    send('action', 'punch', store.hits);
   } else if (name === 'getup') {
     send('action', 'getup');
   } else if (name === 'mute') {
@@ -112,12 +124,26 @@ function startDrag(offX, offY) {
   stopDrag();
   dragTimer = setInterval(() => {
     const p = getCursor();
-    win.setPosition(Math.round(p.x - offX), Math.round(p.y - offY));
+    const x = Math.round(p.x - offX) | 0, y = Math.round(p.y - offY) | 0;
+    if (Number.isFinite(x) && Number.isFinite(y)) win.setPosition(x, y);
   }, 16);
 }
 function stopDrag() {
   if (dragTimer) clearInterval(dragTimer);
   dragTimer = null;
+}
+
+// ---------- 眼神跟随：每 100ms 取一次鼠标位置，没动就不发 ----------
+let lastCursor = null;
+function startCursorWatch() {
+  setInterval(() => {
+    if (!win || win.isDestroyed()) return;
+    const p = getCursor();
+    if (lastCursor && p.x === lastCursor.x && p.y === lastCursor.y) return;
+    lastCursor = p;
+    const b = win.getBounds();
+    send('cursor', { x: p.x, y: p.y, wx: b.x, wy: b.y });
+  }, 100);
 }
 
 // ---------- IPC ----------
@@ -126,11 +152,20 @@ ipcMain.on('set-ignore', (_e, ignore) => {
   if (ignore) win.setIgnoreMouseEvents(true, { forward: true });
   else win.setIgnoreMouseEvents(false);
 });
-ipcMain.on('move', (_e, x, y) => win && win.setPosition(Math.round(x), Math.round(y)));
+ipcMain.on('move', (_e, x, y) => {
+  if (!win || win.isDestroyed()) return;
+  if (!Number.isFinite(x) || !Number.isFinite(y) || Math.abs(x) > 1e6 || Math.abs(y) > 1e6) {
+    logError(`收到异常坐标 move(${x}, ${y})，已忽略`);
+    return;
+  }
+  // | 0：转成真正的整数。Math.round(-0.3) 得到的是 -0，Electron 不认 -0 会直接报错
+  win.setPosition(Math.round(x) | 0, Math.round(y) | 0);
+});
+ipcMain.on('log', (_e, msg) => logError(msg));
 ipcMain.on('menu', () => showMenu());
 ipcMain.on('drag-start', (_e, offX, offY) => startDrag(offX, offY));
 ipcMain.handle('drag-end', () => { stopDrag(); return win.getBounds(); });
-ipcMain.on('ko-state', (_e, ko) => { koState = ko; });
+ipcMain.on('ko-state', (_e, needHelp) => { koState = needHelp; }); // K.O. 或在哭时可以"扶起来"
 ipcMain.handle('init', () => ({
   bounds: win.getBounds(),
   muted: store.muted,
@@ -148,6 +183,7 @@ if (!app.requestSingleInstanceLock()) {
     if (process.platform === 'darwin' && app.dock) app.dock.hide(); // 不在 Dock 里占位置
     loadStore();
     createWindow();
+    startCursorWatch();
     screen.on('display-metrics-changed', () => send('screen-changed'));
     screen.on('display-removed', () => send('screen-changed'));
     if (TEST) {

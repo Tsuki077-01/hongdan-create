@@ -1,19 +1,26 @@
-// 红蛋桌宠 —— 渲染进程：动作、声音、交互
+// 红蛋桌宠 —— 渲染进程：动作、表情、眼神、声音、交互
 (async () => {
   const WIN_W = 240;
   const WIN_H = 230;
   const GROUND = 224;          // 窗口内的"地面"高度
   const CX = 50, CY = 74;      // 蛋在 SVG 里的旋转中心
-  const ROLL_SPEED = 42;       // 滚动速度 px/s
+  const EYE_X = 50, EYE_Y = 70.5; // 两只眼睛的中点（算眼神方向用）
+  const GAZE_MAX = 5.5;        // 眼珠最多偏离镜片中心几像素（不出框）
   const GRAVITY = 2600;        // 掉落重力 px/s²
   const COMBO_WINDOW = 15000;  // 15 秒内连着揍才算"连续"
+  const CRY_EVERY = 10;        // 今天每被揍满 10 下哭一次
 
   const CLICK_LINES = ['咕噜', '一机做事一机当，好机我也一机当', '蛋在求别踢', '早餐是溏心蛋吗', '蛋蛋好难'];
   const HIT_LINES = ['坏女人也会疼的', '笨笨嘟倒下了', '软饭吐出来了', '今天第几顿了', '我错了我错了'];
+  const CRY_LINES = ['呜呜 揍太多了', '呜呜呜……蛋壳要裂了', '再揍要变散黄蛋了 呜'];
   const THANKS = '谢谢 yyq，还是你心软';
 
   const $ = (id) => document.getElementById(id);
   const egg = $('egg'), wrap = $('wrap'), bubble = $('bubble'), koText = $('ko'), shadow = $('shadow');
+  const rotGroups = [...egg.querySelectorAll('.rot')];
+  const clipRot = egg.querySelector('.clip-rot');
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
   // ---------- 蛋的轮廓采样：用来算每个角度下哪一点着地 ----------
   const bodyPath = $('body');
@@ -32,12 +39,14 @@
 
   // ---------- 状态 ----------
   const init = await window.pet.init();
+  const CRY_MS = init.test ? 4000 : 20000; // 哭一会儿自己好
   const S = {
     mode: 'idle',           // idle | roll | drag | fall | ko
     x: init.bounds.x, y: init.bounds.y,
     baseAngle: 0,
     dir: Math.random() < 0.5 ? -1 : 1,
-    ko: false,
+    ko: false, crying: false, scared: false,
+    tripping: false,
     streak: 0, lastHit: 0,
     muted: init.muted,
     roll: null, fall: null,
@@ -46,6 +55,7 @@
   const groundY = () => wa.y + wa.height - WIN_H;
   const minX = () => wa.x + 62 - WIN_W / 2;
   const maxX = () => wa.x + wa.width - 62 - WIN_W / 2;
+  const room = (dir) => Math.max(0, dir > 0 ? maxX() - S.x : S.x - minX());
 
   // ---------- 补间动画（只在需要时跑） ----------
   const tweens = new Set();
@@ -58,10 +68,11 @@
   const ease = {
     out: (t) => 1 - Math.pow(1 - t, 3),
     inOut: (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2),
+    sine: (t) => 0.5 - Math.cos(t * Math.PI) / 2,
   };
-  let angleOffset = 0;   // 晃动 / 被揍歪的叠加角度
-  let squash = 1;        // 落地压扁
-  const offsets = { wobble: 0, hit: 0 };
+  let squash = 1;                                  // 落地压扁
+  const offsets = { wobble: 0, hit: 0, shake: 0 }; // 叠加在滚动角度上的晃动
+  let hopY = 0;                                    // 原地小跳的高度
 
   function wobble(amp, dur = 900) {
     tween(dur, (t) => { offsets.wobble = amp * Math.sin(t * Math.PI * 5) * (1 - t); },
@@ -79,77 +90,238 @@
   }
 
   // ---------- 主循环：没事干时完全停下省电 ----------
-  let raf = 0, last = 0, lastMoveX = NaN, lastMoveY = NaN;
+  let raf = 0, last = 0, inTick = false, lastMoveX = NaN, lastMoveY = NaN;
   function wake() {
-    if (!raf) { last = performance.now(); raf = requestAnimationFrame(tick); }
+    // 正在一帧里面时不另起循环，帧末尾会自己决定要不要继续，保证永远只有一个循环
+    if (!raf && !inTick) { last = performance.now(); raf = requestAnimationFrame(tick); }
   }
   function tick(now) {
     raf = 0;
-    const dt = Math.min(0.05, (now - last) / 1000);
+    inTick = true;
+    const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
     last = now;
 
-    if (S.mode === 'roll') stepRoll(dt);
+    if (S.mode === 'roll') stepRoll(now);
     else if (S.mode === 'fall') stepFall(dt);
+    // 被抓着时轻轻发抖
+    offsets.shake = dragging ? 2.6 * Math.sin(now * 0.075) + 1.2 * Math.sin(now * 0.19) : 0;
 
     for (const t of [...tweens]) {
-      const p = Math.min(1, (now - t.t0) / t.dur);
+      const p = Math.max(0, Math.min(1, (now - t.t0) / t.dur));
       t.apply(p);
       if (p >= 1) { tweens.delete(t); t.done && t.done(); }
     }
     render();
 
-    if (S.mode === 'roll' || S.mode === 'fall' || tweens.size) raf = requestAnimationFrame(tick);
+    inTick = false;
+    if (S.mode === 'roll' || S.mode === 'fall' || dragging || tweens.size) raf = requestAnimationFrame(tick);
   }
 
+  // 保险：坐标万一变成非法数字，记下现场并让蛋回到屏幕底部中间
+  function recoverIfBroken() {
+    if (Number.isFinite(S.x) && Number.isFinite(S.y) && Number.isFinite(S.baseAngle)) return;
+    window.pet.log('坐标异常，已复位：' + JSON.stringify({ mode: S.mode, x: String(S.x), y: String(S.y), angle: String(S.baseAngle), wa, roll: S.roll, fall: S.fall }));
+    S.roll = null; S.fall = null;
+    if (S.mode === 'roll' || S.mode === 'fall') S.mode = S.ko ? 'ko' : 'idle';
+    S.baseAngle = S.ko ? 90 : 0;
+    S.x = wa.x + wa.width / 2 - WIN_W / 2;
+    S.y = groundY();
+  }
+
+  let curAngle = 0, curTy = 0;
   function render() {
-    angleOffset = offsets.wobble + offsets.hit;
-    const a = S.baseAngle + angleOffset;
-    const ty = GROUND - support(a) - CY;
-    egg.style.transform = `translate(${WIN_W / 2 - CX}px, ${ty}px) rotate(${a}deg)`;
+    recoverIfBroken();
+    const a = S.baseAngle + offsets.wobble + offsets.hit + offsets.shake;
+    curAngle = a;
+    curTy = GROUND - support(a) - CY - hopY;
+    egg.style.transform = `translate(${WIN_W / 2 - CX}px, ${curTy}px)`;
+    // 蛋身和脸转；高光和暗面不转，只用转动后的蛋形裁剪
+    const rot = `rotate(${a.toFixed(2)} ${CX} ${CY})`;
+    for (const g of rotGroups) g.setAttribute('transform', rot);
+    clipRot.setAttribute('transform', rot);
     wrap.style.transform = squash === 1 ? '' : `scale(${2 - squash}, ${squash})`;
     if (S.mode !== 'drag' && (S.x !== lastMoveX || S.y !== lastMoveY)) {
       window.pet.move(S.x, S.y);
       lastMoveX = S.x; lastMoveY = S.y;
     }
-    shadow.classList.toggle('air', S.mode === 'drag' || (S.mode === 'fall' && S.y < groundY() - 4));
+    shadow.classList.toggle('air', S.mode === 'drag' || hopY > 3 || (S.mode === 'fall' && S.y < groundY() - 4));
     shadow.classList.toggle('wide', S.ko);
+    updateGaze();
   }
 
-  // ---------- 滚动：每次正好滚整圈，停下时站正 ----------
-  function startRoll() {
-    const turns = Math.random() < 0.7 ? 1 : 2;
-    const dist = turns * PERIM;
-    let dir = Math.random() < 0.5 ? -1 : 1;
-    if (S.x + dir * dist > maxX() || S.x + dir * dist < minX()) dir = -dir;
-    if (S.x + dir * dist > maxX() || S.x + dir * dist < minX()) return scheduleNext(); // 地方太小，不滚了
-    S.dir = dir;
-    S.roll = { startX: S.x, startAngle: S.baseAngle, dist, d: 0 };
-    S.mode = 'roll';
-    lookAt(dir * 2, 0);
-    wake();
-  }
-  function stepRoll(dt) {
-    const r = S.roll;
-    r.d = Math.min(r.dist, r.d + ROLL_SPEED * dt);
-    S.x = r.startX + S.dir * r.d;
-    S.baseAngle = r.startAngle + (S.dir * r.d / PERIM) * 360;
-    if (r.d >= r.dist) {
-      S.baseAngle = Math.round(S.baseAngle / 360) * 360;
-      S.roll = null;
-      S.mode = 'idle';
-      lookAt(0, 0);
-      scheduleNext();
+  // ---------- 表情：眼睛 / 嘴 / 眉毛，按优先级决定 ----------
+  let hitUntil = 0, talkUntil = 0, faceTimer = 0;
+  function setVariant(group, name) {
+    for (const el of $(group).children) {
+      el.style.display = (el.dataset.v || '').split(' ').includes(name) ? '' : 'none';
     }
   }
-  function stopRoll() {
-    if (S.mode === 'roll') { S.mode = 'idle'; S.roll = null; lookAt(0, 0); }
+  function face() {
+    const now = Date.now();
+    let eyes = 'normal', mouth = 'smile', brows = 'none';
+    if (S.scared) { eyes = 'scared'; mouth = 'o'; brows = 'scared'; }
+    else if (S.crying) { eyes = 'cry'; mouth = 'frown'; brows = 'sad'; }
+    else if (S.ko) { eyes = 'ko'; mouth = 'wavy'; }
+    else if (now < hitUntil) { eyes = 'squint'; mouth = 'wavy'; }
+    else if (now < talkUntil) { mouth = 'open'; }
+    if (egg.dataset.eyes !== eyes) { setVariant('eyes', eyes); egg.dataset.eyes = eyes; }
+    if (egg.dataset.mouth !== mouth) { setVariant('mouth', mouth); egg.dataset.mouth = mouth; }
+    if (egg.dataset.brows !== brows) { setVariant('brows', brows); egg.dataset.brows = brows; }
+    // 到点自动切回下一个表情
+    clearTimeout(faceTimer);
+    const next = [hitUntil, talkUntil].filter((t) => t > now);
+    if (next.length) faceTimer = setTimeout(face, Math.min(...next) - now + 10);
   }
-  // 滚到一半被打断时，顺势转回站正
-  function settleUpright() {
-    const from = S.baseAngle, to = Math.round(from / 360) * 360;
-    if (from === to) return;
-    tween(300, (t) => { if (!S.ko) S.baseAngle = from + (to - from) * ease.out(t); },
-      () => { if (!S.ko) S.baseAngle = to; });
+
+  // ---------- 眼神：跟着鼠标走，鼠标好一会没动就自己发呆乱看 ----------
+  let cursor = null, cursorMovedAt = 0, idleLook = [0, 0], gazeKey = '';
+  function updateGaze() {
+    let gx = idleLook[0], gy = idleLook[1];
+    if (cursor && Date.now() - cursorMovedAt < 5000) {
+      // 眼睛在屏幕上的位置（考虑蛋当前的旋转）
+      const r = (curAngle * Math.PI) / 180, c = Math.cos(r), s = Math.sin(r);
+      const lx = EYE_X - CX, ly = EYE_Y - CY;
+      // 拖拽时窗口由主进程移动，用它报来的窗口位置；平时用自己算的位置（更及时）
+      const wx = dragging ? cursor.wx : S.x, wy = dragging ? cursor.wy : S.y;
+      const ex = wx + WIN_W / 2 + lx * c - ly * s;
+      const ey = wy + curTy + CY + lx * s + ly * c;
+      const vx = cursor.x - ex, vy = cursor.y - ey;
+      // 转回蛋自己的坐标系，这样蛋转着的时候眼珠也朝对方向
+      const ux = vx * c + vy * s, uy = -vx * s + vy * c;
+      const d = Math.hypot(ux, uy);
+      if (d > 0.5) {
+        const k = (GAZE_MAX * Math.min(1, d / 140)) / d;
+        gx = ux * k; gy = uy * k;
+      } else { gx = 0; gy = 0; }
+    }
+    const key = `${gx.toFixed(1)},${gy.toFixed(1)}`;
+    if (key === gazeKey) return;
+    gazeKey = key;
+    $('pupils').style.transform = `translate(${gx.toFixed(2)}px, ${gy.toFixed(2)}px)`;
+  }
+  window.pet.onCursor((c) => {
+    if (cursor && (c.x !== cursor.x || c.y !== cursor.y)) cursorMovedAt = Date.now();
+    else if (!cursor) cursorMovedAt = Date.now();
+    cursor = c;
+    updateGaze();
+  });
+
+  // ---------- 滚动：一段段"小行程"，速度距离随机，停下时顺势回到站正 ----------
+  let tripToken = 0, rollResolve = null;
+  function rollBy(dx, dur, easeFn = ease.sine, tag = 'main') {
+    return new Promise((resolve) => {
+      if (!Number.isFinite(dx) || Math.abs(dx) < 0.5) return resolve(true);
+      S.dir = Math.sign(dx);
+      S.roll = { startX: S.x, startAngle: S.baseAngle, dx, dur: Math.max(120, dur), t0: performance.now(), ease: easeFn, tag };
+      S.mode = 'roll';
+      rollResolve = resolve;
+      wake();
+    });
+  }
+  function stepRoll(now) {
+    const r = S.roll;
+    const p = Math.max(0, Math.min(1, (now - r.t0) / r.dur));
+    const e = r.ease(p);
+    S.x = r.startX + r.dx * e;
+    S.baseAngle = r.startAngle + (r.dx * e / PERIM) * 360;
+    if (p >= 1) finishRoll(true);
+  }
+  function finishRoll(ok) {
+    S.roll = null;
+    if (S.mode === 'roll') S.mode = 'idle';
+    const res = rollResolve;
+    rollResolve = null;
+    if (res) res(ok);
+  }
+  function stopRoll() {
+    if (S.roll) finishRoll(false);
+  }
+  function cancelTrip() {
+    tripToken++;
+    S.tripping = false;
+    stopRoll();
+  }
+  // 停下时往前或往回滚一点点，回到站正（不会滚出屏幕）
+  async function settle(bigWobble, speed = 45) {
+    const a = S.baseAngle;
+    const k = Math.floor(a / 360);
+    const options = [k * 360, (k + 1) * 360].sort((p, q) => Math.abs(p - a) - Math.abs(q - a));
+    let target = options.find((t) => {
+      const nx = S.x + ((t - a) / 360) * PERIM;
+      return nx >= minX() - 1 && nx <= maxX() + 1;
+    });
+    if (target === undefined) target = options[0];
+    const diff = target - a;
+    if (Math.abs(diff) < 0.5) { S.baseAngle = target; return true; }
+    // 回正的速度跟这一趟差不多（慢慢挪的蛋不会突然猛转），但最慢也要像在"倒回去"
+    const dx = (diff / 360) * PERIM;
+    const v = Math.max(28, Math.min(speed, 90));
+    const ok = await rollBy(dx, 250 + (Math.abs(dx) / v) * 1000 * 1.2, ease.sine, 'settle');
+    if (ok) {
+      S.baseAngle = target;
+      wobble(bigWobble ? 10 : 4, bigWobble ? 1000 : 600);
+    }
+    return ok;
+  }
+
+  const STYLES = {
+    creep:  { v: [10, 18],   d: [40, 130],  w: 0.25 }, // 慢慢挪
+    normal: { v: [32, 55],   d: [140, 460], w: 0.5 },  // 正常滚
+    dash:   { v: [180, 280], d: [260, 640], w: 0.25 }, // 一下冲很快
+  };
+  function pickStyle() {
+    let r = Math.random();
+    for (const [name, s] of Object.entries(STYLES)) { if ((r -= s.w) < 0) return name; }
+    return 'normal';
+  }
+  async function trip(style = pickStyle(), opt = {}) {
+    const my = ++tripToken;
+    S.tripping = true;
+    const alive = () => my === tripToken && !S.ko && !S.crying && !dragging;
+    try {
+      const cfg = STYLES[style];
+      const v = rand(...cfg.v);
+      let dist = rand(...cfg.d);
+      let dir = Math.random() < 0.5 ? -1 : 1;
+      if (room(dir) < Math.min(dist, 60)) dir = -dir;
+      dist = Math.min(dist, room(dir));
+      if (dist < 25) return;
+      // 正弦加减速：最高速度约是平均速度的 1.6 倍，所以时长放宽一点，让最高速度接近设定值
+      const dur = (d) => (d / v) * 1000 * 1.25;
+      S.lastTrip = { style, v, dist, dir };
+
+      if ((opt.pause ?? Math.random() < 0.3) && dist > 110) {
+        // 滚到一半停下来发呆……
+        const d1 = dist * rand(0.35, 0.6);
+        if (!(await rollBy(dir * d1, dur(d1))) || !alive()) return;
+        if (!(await settle(false, v)) || !alive()) return;
+        daydream();
+        await wait(rand(1200, 3200));
+        if (!alive()) return;
+        // ……然后接着滚，或者往回滚
+        const back = opt.reverse ?? Math.random() < 0.5;
+        if (back) dir = -dir;
+        const d2 = Math.min(back ? rand(60, 260) : dist - d1, room(dir));
+        if (d2 > 20 && (!(await rollBy(dir * d2, dur(d2))) || !alive())) return;
+      } else if (!(await rollBy(dir * dist, dur(dist))) || !alive()) {
+        return;
+      }
+      await settle(style === 'dash', v);
+    } finally {
+      if (my === tripToken) {
+        S.tripping = false;
+        if (S.mode === 'idle' && !S.ko && !S.crying && !dragging) scheduleNext();
+      }
+    }
+  }
+
+  // 原地小跳一下
+  function hop() {
+    tween(700, (t) => {
+      if (t < 0.18) { squash = 1 - 0.1 * Math.sin((t / 0.18) * Math.PI); hopY = 0; }      // 蓄力
+      else if (t < 0.82) { squash = 1; hopY = 20 * Math.sin(((t - 0.18) / 0.64) * Math.PI); } // 腾空
+      else { hopY = 0; squash = 1 - 0.09 * Math.sin(((t - 0.82) / 0.18) * Math.PI); }      // 落地
+    }, () => { hopY = 0; squash = 1; sound.land(); });
   }
 
   // ---------- 掉落 + 落地弹一下 ----------
@@ -164,59 +336,67 @@
     S.y += f.vy * dt;
     if (S.y >= g) {
       S.y = g;
-      if (!f.bounced && f.vy > 380) {
+      if (!f.bounced && f.vy > 150) {
         f.bounced = true;
         squashOnce(0.16);
         sound.land();
-        f.vy = -Math.min(f.vy * 0.3, 520);
+        f.vy = -Math.max(160, Math.min(f.vy * 0.3, 520));
       } else {
         if (!f.bounced) { squashOnce(0.08); sound.land(); }
         S.fall = null;
         S.mode = S.ko ? 'ko' : 'idle';
-        if (!S.ko) scheduleNext(1500);
+        S.scared = false; // 落地了，不怕了
+        face();
+        if (!S.ko && !S.crying) scheduleNext(1500);
       }
     }
   }
 
-  // ---------- 平时：发呆、眨眼、东张西望 ----------
-  let behaviorTimer = 0;
+  // ---------- 平时：发呆、眨眼、小跳、晃一晃、出门滚一段 ----------
+  let behaviorTimer = 0, autopilot = true; // autopilot 只给自动测试用来暂停自发行为
   function scheduleNext(delay) {
     clearTimeout(behaviorTimer);
-    if (S.ko) return;
+    if (S.ko || S.crying) return;
     behaviorTimer = setTimeout(() => {
-      if (S.mode !== 'idle' || S.ko) return;
-      if (Math.random() < 0.7) startRoll();
-      else { daydream(); scheduleNext(); }
-    }, delay ?? 3000 + Math.random() * 6000);
+      if (S.mode !== 'idle' || S.ko || S.crying || S.tripping || dragging) return;
+      if (!autopilot) { scheduleNext(); return; }
+      const r = Math.random();
+      if (r < 0.62) { trip(); return; }
+      if (r < 0.74) hop();
+      else if (r < 0.82) wobble(9, 1000);
+      else daydream();
+      scheduleNext();
+    }, delay ?? rand(2500, 7500));
   }
   function daydream() {
-    const spots = [[-2.5, -1.5], [2.5, -1.5], [0, -2.5], [-2, 1], [2, 1]];
-    const [x, y] = spots[Math.floor(Math.random() * spots.length)];
-    lookAt(x, y);
-    setTimeout(() => { if (!S.ko && S.mode === 'idle') lookAt(0, 0); }, 1600 + Math.random() * 1500);
-  }
-  function lookAt(x, y) {
-    $('pupils').style.transform = x || y ? `translate(${x}px, ${y}px)` : '';
+    const spots = [[-4, -3], [4, -3], [0, -4.5], [-4, 2], [4, 2]];
+    idleLook = spots[Math.floor(Math.random() * spots.length)];
+    updateGaze();
+    setTimeout(() => { idleLook = [0, 0]; updateGaze(); }, rand(1600, 3000));
   }
   function scheduleBlink() {
     setTimeout(() => {
-      if (!S.ko && !egg.classList.contains('squint')) {
+      if (egg.dataset.eyes === 'normal') {
         egg.classList.add('blink');
         setTimeout(() => egg.classList.remove('blink'), 130);
         if (Math.random() < 0.2) setTimeout(() => { egg.classList.add('blink'); setTimeout(() => egg.classList.remove('blink'), 120); }, 280);
       }
       scheduleBlink();
-    }, 2500 + Math.random() * 4000);
+    }, rand(2500, 6500));
   }
 
   // ---------- 气泡 ----------
   let bubbleTimer = 0, lastLine = '';
-  function say(text) {
-    bubble.textContent = text;
-    bubble.classList.toggle('long', text.length > 13);
+  function say(text, { talk = false } = {}) {
+    const ms = 1600 + text.length * 110;
+    // 长句在逗号处换行，不要剩一个字孤零零掉到第二行
+    const long = text.length > 13;
+    bubble.textContent = long ? text.replace(/([，,])/, '$1\n') : text;
+    bubble.classList.toggle('long', long);
     bubble.classList.add('show');
     clearTimeout(bubbleTimer);
-    bubbleTimer = setTimeout(() => bubble.classList.remove('show'), 1600 + text.length * 110);
+    bubbleTimer = setTimeout(() => bubble.classList.remove('show'), ms);
+    if (talk) { talkUntil = Date.now() + ms; face(); }
   }
   function pick(list) {
     let s;
@@ -236,12 +416,18 @@
       idleTimer = setTimeout(() => ctx && ctx.suspend(), 3000); // 不响的时候把音频线程停掉省电
       return ctx;
     }
-    function tone(c, { type = 'sine', f0, f1, at = 0, dur, vol, lp }) {
+    function tone(c, { type = 'sine', f0, f1, at = 0, dur, vol, lp, vib }) {
       const t = c.currentTime + at;
       const o = c.createOscillator(), g = c.createGain();
       o.type = type;
       o.frequency.setValueAtTime(f0, t);
       if (f1) o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+      if (vib) { // 颤音（哭腔）
+        const l = c.createOscillator(), lg = c.createGain();
+        l.frequency.value = vib.rate; lg.gain.value = vib.depth;
+        l.connect(lg).connect(o.frequency);
+        l.start(t); l.stop(t + dur + 0.02);
+      }
       g.gain.setValueAtTime(0.0001, t);
       g.gain.exponentialRampToValueAtTime(vol, t + 0.012);
       g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
@@ -287,42 +473,64 @@
         [523, 659, 784].forEach((f, i) => tone(c, { f0: f, at: i * 0.12, dur: 0.22, vol: 0.05 }));
       }),
       land: play('land', (c) => tone(c, { f0: 120, f1: 60, dur: 0.12, vol: 0.12, lp: 600 })),
+      // 呜呜：两声往下掉的颤音
+      cry: play('cry', (c) => {
+        tone(c, { type: 'triangle', f0: 460, f1: 340, dur: 0.5, vol: 0.06, lp: 1400, vib: { rate: 7, depth: 14 } });
+        tone(c, { type: 'triangle', f0: 430, f1: 300, at: 0.6, dur: 0.65, vol: 0.06, lp: 1400, vib: { rate: 7, depth: 16 } });
+      }),
+      // 被抓起来：短促的一声"咿"
+      eek: play('eek', (c) => tone(c, { f0: 700, f1: 1100, dur: 0.14, vol: 0.04, lp: 2500 })),
     };
   })();
 
-  // ---------- 单击 / 揍 / K.O. / 扶起来 ----------
+  // ---------- 单击 / 揍 / K.O. / 哭 / 扶起来 ----------
+  const needHelp = () => window.pet.koState(S.ko || S.crying);
+
   function onClick() {
-    if (S.ko) { wobble(3, 400); return; }
+    if (S.ko || S.crying) { wobble(3, 400); return; }
     wobble(12);
     sound.gulu();
-    say(pick(CLICK_LINES));
+    say(pick(CLICK_LINES), { talk: true });
   }
 
-  function punch() {
+  function punch(hitsToday) {
     const now = Date.now();
     S.streak = now - S.lastHit < COMBO_WINDOW ? S.streak + 1 : 1;
     S.lastHit = now;
     sound.punch();
     say(pick(HIT_LINES));
-    if (S.ko) { wobble(4, 450); return; }
-    if (S.streak >= 3) { knockOut(); return; }
-    stopRoll();
-    settleUpright();
-    hitTilt();
-    egg.classList.add('squint');
-    setTimeout(() => egg.classList.remove('squint'), 600);
-    scheduleNext(2500);
+    talkUntil = 0;
+    const cry = hitsToday > 0 && hitsToday % CRY_EVERY === 0;
+    if (S.ko) wobble(4, 450);
+    else if (S.streak >= 3) knockOut();
+    else {
+      cancelTrip();
+      settleUpright();
+      hitTilt();
+      hitUntil = now + 900;
+      face();
+      if (!cry) scheduleNext(2500);
+    }
+    if (cry) setTimeout(startCry, 500);
+  }
+
+  // 滚到一半被打断时，顺势转回站正
+  function settleUpright() {
+    const from = S.baseAngle, to = Math.round(from / 360) * 360;
+    if (from === to) return;
+    tween(300, (t) => { if (!S.ko) S.baseAngle = from + (to - from) * ease.out(t); },
+      () => { if (!S.ko) S.baseAngle = to; });
   }
 
   function knockOut() {
     S.ko = true;
-    window.pet.koState(true);
+    needHelp();
     clearTimeout(behaviorTimer);
-    stopRoll();
+    cancelTrip();
     if (S.mode !== 'fall' && S.mode !== 'drag') S.mode = 'ko';
-    egg.classList.remove('squint', 'blink');
-    egg.classList.add('ko');
-    lookAt(0, 0);
+    egg.classList.remove('blink');
+    face();
+    idleLook = [0, 0];
     const from = S.baseAngle;
     const side = -S.dir; // 往后倒
     const to = Math.round((from - side * 90) / 360) * 360 + side * 90;
@@ -333,35 +541,67 @@
     }, () => {
       S.baseAngle = to;
       squashOnce(0.08);
-      koText.classList.add('show');
+      if (S.ko) koText.classList.add('show');
     });
     sound.ko();
   }
 
+  let cryTimer = 0;
+  function startCry() {
+    if (S.crying) return;
+    S.crying = true;
+    needHelp();
+    clearTimeout(behaviorTimer);
+    cancelTrip();
+    if (!S.ko) settleUpright();
+    face();
+    sound.cry();
+    say(pick(CRY_LINES));
+    clearTimeout(cryTimer);
+    cryTimer = setTimeout(() => stopCry(), CRY_MS); // 哭一会儿自己好
+  }
+  function stopCry() {
+    if (!S.crying) return;
+    clearTimeout(cryTimer);
+    S.crying = false;
+    needHelp();
+    face();
+    if (!S.ko && S.mode === 'idle') scheduleNext(3000);
+  }
+
   function getUp() {
-    if (!S.ko) return;
-    koText.classList.remove('show');
-    const from = S.baseAngle;
-    const to = Math.round(from / 360) * 360;
-    tween(1400, (t) => { S.baseAngle = from + (to - from) * ease.inOut(t); }, () => {
-      S.baseAngle = to;
-      S.ko = false;
-      S.streak = 0;
-      window.pet.koState(false);
-      egg.classList.remove('ko');
-      if (S.mode === 'ko') S.mode = 'idle';
-      wobble(6, 600);
-      sound.getup();
-      say(THANKS);
-      scheduleNext(3500);
-    });
+    if (S.ko) {
+      koText.classList.remove('show');
+      const from = S.baseAngle;
+      const to = Math.round(from / 360) * 360;
+      tween(1400, (t) => { S.baseAngle = from + (to - from) * ease.inOut(t); }, () => {
+        S.baseAngle = to;
+        S.ko = false;
+        S.streak = 0;
+        stopCry();
+        needHelp();
+        if (S.mode === 'ko') S.mode = 'idle';
+        thanks();
+      });
+    } else if (S.crying) {
+      // 只是在哭：摸摸头就好了
+      stopCry();
+      thanks();
+    }
+  }
+  function thanks() {
+    face();
+    wobble(6, 600);
+    sound.getup();
+    say(THANKS);
+    scheduleNext(3500);
   }
 
   // ---------- 鼠标：点穿 / 单击 / 拖拽 / 右键 ----------
   let hovering = false, down = null, dragging = false;
   const overEgg = (x, y) => {
     const el = document.elementFromPoint(x, y);
-    return !!(el && el.closest && el.closest('#egg'));
+    return !!(el && el.closest && el.closest('#egg .rot'));
   };
   function setHover(v) {
     if (v === hovering) return;
@@ -394,51 +634,66 @@
   });
 
   function beginDrag() {
+    if (!down) return;
     dragging = true;
     clearTimeout(behaviorTimer);
-    stopRoll();
+    cancelTrip();
     if (S.mode === 'fall') S.fall = null;
     S.mode = 'drag';
     if (!S.ko) settleUpright();
+    hopY = 0;
+    S.scared = true; // 被抓起来：害怕
+    face();
+    sound.eek();
     window.pet.dragStart(down.cx, down.cy);
-    wobble(8, 700);
-    render();
+    wake();
   }
   async function endDrag() {
     if (!dragging) return;
     dragging = false;
     down = null;
+    offsets.shake = 0;
     const b = await window.pet.dragEnd();
-    S.x = b.x; S.y = b.y;
+    if (b && Number.isFinite(b.x) && Number.isFinite(b.y)) { S.x = b.x; S.y = b.y; }
     lastMoveX = S.x; lastMoveY = S.y;
     wa = await window.pet.workArea(S.x, S.y);
     S.x = Math.max(minX(), Math.min(maxX(), S.x));
     if (S.y > groundY()) S.y = groundY();
-    startFall();
+    startFall(); // 落地时 stepFall 里恢复正常表情
   }
 
   // ---------- 来自主进程 ----------
-  window.pet.onAction((a) => {
-    if (a === 'punch') punch();
+  window.pet.onAction((a, arg) => {
+    if (a === 'punch') punch(arg);
     else if (a === 'getup') getUp();
   });
   window.pet.onMuted((m) => { S.muted = m; });
   window.pet.onScreenChanged(async () => {
     if (dragging) return;
     wa = await window.pet.workArea(S.x, S.y);
+    cancelTrip();
     S.x = Math.max(minX(), Math.min(maxX(), S.x));
     if (S.mode !== 'fall') S.y = groundY();
-    if (S.mode === 'roll') stopRoll();
+    if (!S.ko) S.baseAngle = Math.round(S.baseAngle / 360) * 360;
     render();
-    if (!S.ko) scheduleNext();
+    if (!S.ko && !S.crying) scheduleNext();
   });
 
-  // 测试用：让自动化测试读取内部状态
-  window.__pet = { S, onClick, punch, getUp, say, overEgg, get dragging() { return dragging; }, get looping() { return !!raf; } };
+  window.addEventListener('error', (e) => window.pet.log('页面错误：' + (e.error && e.error.stack || e.message)));
+  window.addEventListener('unhandledrejection', (e) => window.pet.log('页面错误：' + (e.reason && e.reason.stack || e.reason)));
+
+  // 测试用：让自动化测试读取内部状态、直接触发某个动作
+  window.__pet = {
+    S, onClick, punch, getUp, say, overEgg, trip, hop, startCry, render, cancelTrip,
+    set autopilot(v) { autopilot = v; },
+    get dragging() { return dragging; }, get looping() { return !!raf; },
+    get angle() { return curAngle; }, get hopY() { return hopY; },
+  };
 
   // ---------- 开始 ----------
   S.x = Math.max(minX(), Math.min(maxX(), S.x));
   S.y = groundY();
+  face();
   render();
   scheduleBlink();
   scheduleNext(2000);
