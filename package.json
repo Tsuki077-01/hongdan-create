@@ -1,0 +1,17 @@
+{
+  "name": "hongdan",
+  "productName": "红蛋",
+  "version": "1.0.0",
+  "description": "一颗住在屏幕底部的珊瑚橘色蛋蛋桌宠",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist:mac": "electron-packager . 红蛋 --platform=darwin --arch=arm64,x64 --out=dist --overwrite --app-bundle-id=com.yyq.hongdan --icon=build/icon.icns --ignore=^/dist --ignore=^/test --ignore=^/scripts --ignore=^/build",
+    "test": "HONGDAN_TEST=1 electron . --no-sandbox"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "electron": "^33.4.11"
+  }
+}

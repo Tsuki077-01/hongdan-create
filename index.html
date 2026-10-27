@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>红蛋</title>
+  <link rel="stylesheet" href="pet.css">
+</head>
+<body>
+  <div id="bubble"></div>
+  <div id="ko">K.O.</div>
+  <div id="shadow"></div>
+  <div id="wrap">
+    <svg id="egg" width="100" height="122" viewBox="0 0 100 122" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <!-- 手绘感：轻微扰动描边 -->
+        <filter id="sketch" x="-10%" y="-10%" width="120%" height="120%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="7" result="n"/>
+          <feDisplacementMap in="SourceGraphic" in2="n" scale="2.6" xChannelSelector="R" yChannelSelector="G"/>
+        </filter>
+        <clipPath id="eggClip">
+          <path d="M50 5 C 75 5, 94 45, 94 76 C 94 102, 74 118, 50 118 C 26 118, 6 102, 6 76 C 6 45, 25 5, 50 5 Z"/>
+        </clipPath>
+      </defs>
+
+      <g filter="url(#sketch)">
+        <!-- 蛋身 -->
+        <path id="body" d="M50 5 C 75 5, 94 45, 94 76 C 94 102, 74 118, 50 118 C 26 118, 6 102, 6 76 C 6 45, 25 5, 50 5 Z"
+              fill="#F09A7A"/>
+        <g clip-path="url(#eggClip)">
+          <ellipse cx="50" cy="122" rx="58" ry="24" fill="#E3806A" opacity="0.45"/>
+        </g>
+        <path d="M24 38 Q30 22 41 15" fill="none" stroke="#FFF4EC" stroke-width="4.5" stroke-linecap="round" opacity="0.7"/>
+        <path d="M50 5 C 75 5, 94 45, 94 76 C 94 102, 74 118, 50 118 C 26 118, 6 102, 6 76 C 6 45, 25 5, 50 5 Z"
+              fill="none" stroke="#8B3A1E" stroke-width="3.6" stroke-linejoin="round"/>
+
+        <!-- 腮红 -->
+        <ellipse cx="21" cy="89" rx="8" ry="4.6" fill="#F7A0AE" opacity="0.8"/>
+        <ellipse cx="79" cy="89" rx="8" ry="4.6" fill="#F7A0AE" opacity="0.8"/>
+
+        <!-- 连体圆框眼镜 -->
+        <g fill="none" stroke="#8B3A1E" stroke-width="2.8" stroke-linecap="round">
+          <circle cx="34" cy="70" r="12.5" fill="#FFFAF5" fill-opacity="0.85"/>
+          <circle cx="66" cy="70" r="12.5" fill="#FFFAF5" fill-opacity="0.85"/>
+          <path d="M46.5 69 Q50 64.5 53.5 69"/>
+          <path d="M21.6 67.5 L12 64.5"/>
+          <path d="M78.4 67.5 L88 64.5"/>
+        </g>
+
+        <!-- 小弧线笑 -->
+        <path d="M45 94 Q50 99 55 94" fill="none" stroke="#8B3A1E" stroke-width="2.6" stroke-linecap="round"/>
+      </g>
+
+      <!-- 眼睛：正常 -->
+      <g id="pupils">
+        <circle class="pupil" cx="34" cy="70.5" r="3.3" fill="#1E120D"/>
+        <circle class="pupil" cx="66" cy="70.5" r="3.3" fill="#1E120D"/>
+      </g>
+      <!-- 眼睛：被揍时 > < -->
+      <g id="squint" fill="none" stroke="#1E120D" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M30 66 L37 70.5 L30 75"/>
+        <path d="M70 66 L63 70.5 L70 75"/>
+      </g>
+      <!-- 眼睛：K.O. 叉叉 -->
+      <g id="xeyes" fill="none" stroke="#1E120D" stroke-width="2.4" stroke-linecap="round">
+        <path d="M29.5 65.5 L38.5 74.5 M38.5 65.5 L29.5 74.5"/>
+        <path d="M61.5 65.5 L70.5 74.5 M70.5 65.5 L61.5 74.5"/>
+      </g>
+    </svg>
+  </div>
+  <script src="pet.js"></script>
+</body>
+</html>
