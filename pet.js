@@ -6,6 +6,8 @@
   const CX = 50, CY = 74;      // 蛋在 SVG 里的旋转中心
   const EYE_X = 50, EYE_Y = 70.5; // 两只眼睛的中点（算眼神方向用）
   const GAZE_MAX = 5.5;        // 眼珠最多偏离镜片中心几像素（不出框）
+  const NEAR = 150;            // 鼠标离蛋中心多近算"靠近"：靠近才看你，靠近时不自己乱动
+  const QUIET_AFTER_CLICK = 5000; // 点过之后至少安静这么久才自己动
   const GRAVITY = 2600;        // 掉落重力 px/s²
   const COMBO_WINDOW = 15000;  // 15 秒内连着揍才算"连续"
   const CRY_EVERY = 10;        // 今天每被揍满 10 下哭一次
@@ -35,6 +37,45 @@
     let m = -1e9;
     for (const [x, y] of outline) m = Math.max(m, x * s + y * c);
     return m + 1.8; // 描边一半
+  }
+
+  // ---------- 高光：贴着蛋轮廓上最朝左上方（光源方向）的那段边 ----------
+  const LIGHT = [-0.66, -0.75];            // 光从左上方来
+  const HL_INSET = 7.5;                    // 高光离边缘往里缩多少
+  const fine = [];                         // 更密的轮廓采样，高光滑动才不会一跳一跳
+  for (let i = 0; i < 360; i++) {
+    const p = bodyPath.getPointAtLength((i / 360) * PERIM);
+    fine.push([p.x - CX, p.y - CY]);
+  }
+  const hlPath = $('hl'), hlDot = $('hlDot');
+  let hlKey = '';
+  function updateHighlight(deg) {
+    const key = deg.toFixed(1);
+    if (key === hlKey) return;
+    hlKey = key;
+    const r = (deg * Math.PI) / 180, c = Math.cos(r), s = Math.sin(r);
+    const n = fine.length;
+    const at = (i) => {
+      const [x, y] = fine[((i % n) + n) % n];
+      const qx = x * c - y * s, qy = x * s + y * c; // 转动后的轮廓点
+      const len = Math.hypot(qx, qy), k = (len - HL_INSET) / len;
+      return [CX + qx * k, CY + qy * k];
+    };
+    // 找到最朝向光源的那一点
+    let best = 0, bestDot = -1e9;
+    for (let i = 0; i < n; i++) {
+      const [x, y] = fine[i];
+      const d = (x * c - y * s) * LIGHT[0] + (x * s + y * c) * LIGHT[1];
+      if (d > bestDot) { bestDot = d; best = i; }
+    }
+    // 以它为中心画一段弧（约 ±22 个采样点），再在偏上的那头点一个小亮点
+    const pts = [];
+    for (let i = best - 22; i <= best + 22; i += 3) pts.push(at(i));
+    hlPath.setAttribute('d', 'M' + pts.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(' L'));
+    const a = at(best - 36), b = at(best + 36);
+    const [dx, dy] = a[1] < b[1] ? a : b;
+    hlDot.setAttribute('cx', dx.toFixed(1));
+    hlDot.setAttribute('cy', dy.toFixed(1));
   }
 
   // ---------- 状态 ----------
@@ -139,6 +180,7 @@
     const rot = `rotate(${a.toFixed(2)} ${CX} ${CY})`;
     for (const g of rotGroups) g.setAttribute('transform', rot);
     clipRot.setAttribute('transform', rot);
+    updateHighlight(a);
     wrap.style.transform = squash === 1 ? '' : `scale(${2 - squash}, ${squash})`;
     if (S.mode !== 'drag' && (S.x !== lastMoveX || S.y !== lastMoveY)) {
       window.pet.move(S.x, S.y);
@@ -173,16 +215,34 @@
     if (next.length) faceTimer = setTimeout(face, Math.min(...next) - now + 10);
   }
 
-  // ---------- 眼神：跟着鼠标走，鼠标好一会没动就自己发呆乱看 ----------
-  let cursor = null, cursorMovedAt = 0, idleLook = [0, 0], gazeKey = '';
+  // ---------- 眼神：鼠标靠近（NEAR 以内）才跟着看；靠近时蛋也不自己乱动 ----------
+  let cursor = null, near = false, idleLook = [0, 0], gazeKey = '';
+  function eggWindowPos() {
+    // 拖拽时窗口由主进程移动，用它报来的窗口位置；平时用自己算的位置（更及时）
+    return dragging && cursor ? [cursor.wx, cursor.wy] : [S.x, S.y];
+  }
+  function updateNear() {
+    if (!cursor) return;
+    const [wx, wy] = eggWindowPos();
+    const was = near;
+    near = Math.hypot(cursor.x - (wx + WIN_W / 2), cursor.y - (wy + curTy + CY)) < NEAR;
+    if (near && !was) onNear();
+  }
+  // 鼠标一靠近：正在滚就停下站好
+  function onNear() {
+    if (S.tripping || S.mode === 'roll') {
+      cancelTrip();
+      if (!S.ko) settleUpright();
+    }
+  }
   function updateGaze() {
+    updateNear();
     let gx = idleLook[0], gy = idleLook[1];
-    if (cursor && Date.now() - cursorMovedAt < 5000) {
+    if (cursor && near) {
       // 眼睛在屏幕上的位置（考虑蛋当前的旋转）
       const r = (curAngle * Math.PI) / 180, c = Math.cos(r), s = Math.sin(r);
       const lx = EYE_X - CX, ly = EYE_Y - CY;
-      // 拖拽时窗口由主进程移动，用它报来的窗口位置；平时用自己算的位置（更及时）
-      const wx = dragging ? cursor.wx : S.x, wy = dragging ? cursor.wy : S.y;
+      const [wx, wy] = eggWindowPos();
       const ex = wx + WIN_W / 2 + lx * c - ly * s;
       const ey = wy + curTy + CY + lx * s + ly * c;
       const vx = cursor.x - ex, vy = cursor.y - ey;
@@ -190,7 +250,7 @@
       const ux = vx * c + vy * s, uy = -vx * s + vy * c;
       const d = Math.hypot(ux, uy);
       if (d > 0.5) {
-        const k = (GAZE_MAX * Math.min(1, d / 140)) / d;
+        const k = (GAZE_MAX * Math.min(1, d / 70)) / d;
         gx = ux * k; gy = uy * k;
       } else { gx = 0; gy = 0; }
     }
@@ -200,8 +260,6 @@
     $('pupils').style.transform = `translate(${gx.toFixed(2)}px, ${gy.toFixed(2)}px)`;
   }
   window.pet.onCursor((c) => {
-    if (cursor && (c.x !== cursor.x || c.y !== cursor.y)) cursorMovedAt = Date.now();
-    else if (!cursor) cursorMovedAt = Date.now();
     cursor = c;
     updateGaze();
   });
@@ -277,7 +335,7 @@
   async function trip(style = pickStyle(), opt = {}) {
     const my = ++tripToken;
     S.tripping = true;
-    const alive = () => my === tripToken && !S.ko && !S.crying && !dragging;
+    const alive = () => my === tripToken && !S.ko && !S.crying && !dragging && !near;
     try {
       const cfg = STYLES[style];
       const v = rand(...cfg.v);
@@ -308,10 +366,9 @@
       }
       await settle(style === 'dash', v);
     } finally {
-      if (my === tripToken) {
-        S.tripping = false;
-        if (S.mode === 'idle' && !S.ko && !S.crying && !dragging) scheduleNext();
-      }
+      if (my === tripToken) S.tripping = false;
+      // 不管是走完还是被打断（鼠标靠近、被点、被拖），都要排好下一次
+      if (!S.ko && !S.crying) scheduleNext();
     }
   }
 
@@ -353,17 +410,22 @@
   }
 
   // ---------- 平时：发呆、眨眼、小跳、晃一晃、出门滚一段 ----------
-  let behaviorTimer = 0, autopilot = true; // autopilot 只给自动测试用来暂停自发行为
+  let behaviorTimer = 0, autopilot = true, lastClickAt = 0; // autopilot 只给自动测试用来暂停自发行为
   function scheduleNext(delay) {
     clearTimeout(behaviorTimer);
     if (S.ko || S.crying) return;
     behaviorTimer = setTimeout(() => {
-      if (S.mode !== 'idle' || S.ko || S.crying || S.tripping || dragging) return;
-      if (!autopilot) { scheduleNext(); return; }
+      if (S.ko || S.crying) return; // 扶起来 / 哭完会重新开始
+      // 暂时不方便动（正在滚、被拖着、自动测试暂停）：过一会儿再看，不要让这条"心跳"断掉
+      if (S.mode !== 'idle' || S.tripping || dragging || !autopilot) { scheduleNext(); return; }
+      const quiet = Math.max(near ? 1500 : 0, lastClickAt + QUIET_AFTER_CLICK - Date.now());
+      if (quiet > 0) { scheduleNext(quiet + rand(300, 1500)); return; } // 鼠标在旁边 / 刚点过：先别动
       const r = Math.random();
-      if (r < 0.62) { trip(); return; }
-      if (r < 0.74) hop();
-      else if (r < 0.82) wobble(9, 1000);
+      const what = r < 0.62 ? 'trip' : r < 0.74 ? 'hop' : r < 0.82 ? 'wobble' : 'daydream';
+      S.lastAuto = { what, at: Date.now() }; // 记下最近一次"自己动"（测试用）
+      if (what === 'trip') { trip(); return; }
+      if (what === 'hop') hop();
+      else if (what === 'wobble') wobble(9, 1000);
       else daydream();
       scheduleNext();
     }, delay ?? rand(2500, 7500));
@@ -487,6 +549,8 @@
   const needHelp = () => window.pet.koState(S.ko || S.crying);
 
   function onClick() {
+    lastClickAt = Date.now();
+    if (S.tripping || S.mode === 'roll') { cancelTrip(); if (!S.ko) settleUpright(); }
     if (S.ko || S.crying) { wobble(3, 400); return; }
     wobble(12);
     sound.gulu();
@@ -687,7 +751,7 @@
     S, onClick, punch, getUp, say, overEgg, trip, hop, startCry, render, cancelTrip,
     set autopilot(v) { autopilot = v; },
     get dragging() { return dragging; }, get looping() { return !!raf; },
-    get angle() { return curAngle; }, get hopY() { return hopY; },
+    get angle() { return curAngle; }, get hopY() { return hopY; }, get near() { return near; },
   };
 
   // ---------- 开始 ----------
