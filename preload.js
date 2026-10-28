@@ -13,5 +13,6 @@ contextBridge.exposeInMainWorld('pet', {
   onAction: (fn) => ipcRenderer.on('action', (_e, a, arg) => fn(a, arg)),
   onCursor: (fn) => ipcRenderer.on('cursor', (_e, c) => fn(c)),
   onMuted: (fn) => ipcRenderer.on('muted', (_e, m) => fn(m)),
+  onTalk: (fn) => ipcRenderer.on('talk', (_e, text) => fn(text)),
   onScreenChanged: (fn) => ipcRenderer.on('screen-changed', () => fn()),
 });

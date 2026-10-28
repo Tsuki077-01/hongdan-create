@@ -7,7 +7,7 @@ const HIT_LINES = ['坏女人也会疼的', '笨笨嘟倒下了', '软饭吐出�
 const CRY_LINES = ['呜呜 揍太多了', '呜呜呜……蛋壳要裂了', '再揍要变散黄蛋了 呜'];
 const GAZE_MAX = 5.5;
 
-exports.run = async ({ app, win, getStore, menuAction, menuTemplate, setCursor, getKo }) => {
+exports.run = async ({ app, win, getStore, menuAction, menuTemplate, setCursor, getKo, talk, screenshot }) => {
   const outDir = process.env.HONGDAN_SHOTS || path.join(__dirname, 'shots');
   const only = process.env.HONGDAN_ONLY; // 只跑某一组，调试用
   fs.mkdirSync(outDir, { recursive: true });
@@ -390,6 +390,11 @@ exports.run = async ({ app, win, getStore, menuAction, menuTemplate, setCursor, 
       await sleep(500);
       const idleNoLoop = await waitFor(async () => js('__pet.S.mode === "idle" && !__pet.S.tripping && !__pet.looping'), 3000);
       check('发呆时动画循环完全停下（省电）', idleNoLoop);
+    }
+
+    if (wantGroup('talk')) {
+      const mock = await require('./talk-tests').run({ app, win, talk, check, sleep, waitFor, js });
+      mock.close();
     }
 
     if (wantGroup('chaos')) {

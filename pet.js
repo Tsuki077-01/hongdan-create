@@ -732,6 +732,18 @@
     else if (a === 'getup') getUp();
   });
   window.pet.onMuted((m) => { S.muted = m; });
+  // 聊天窗口里红蛋回话了：蛋头上也冒个气泡、张嘴说话（太长的只冒开头，全文在聊天窗口里）
+  window.pet.onTalk((text) => {
+    const t = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!t) return;
+    const short = t.length > 26 ? t.slice(0, 25) + '…' : t;
+    lastClickAt = Date.now();
+    if (S.ko || S.crying) { wobble(3, 400); say(short); return; }
+    if (S.tripping || S.mode === 'roll') { cancelTrip(); settleUpright(); }
+    wobble(8, 700);
+    sound.gulu();
+    say(short, { talk: true });
+  });
   window.pet.onScreenChanged(async () => {
     if (dragging) return;
     wa = await window.pet.workArea(S.x, S.y);

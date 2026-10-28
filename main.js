@@ -8,6 +8,7 @@ const WIN_H = 230;
 const TEST = process.env.HONGDAN_TEST === '1';
 
 let win = null;
+let talk = null; // 跟红蛋说话（talk.js）
 
 // ---------- 存档：今日被揍次数 + 静音 ----------
 const storePath = () => path.join(app.getPath('userData'), 'hongdan.json');
@@ -88,6 +89,8 @@ let koState = false;
 function menuTemplate() {
   rollDay();
   return [
+    { label: '跟红蛋说话', click: () => talk && talk.openChat() },
+    { type: 'separator' },
     { label: '揍', click: () => menuAction('punch') },
     { label: '扶起来', enabled: koState, click: () => menuAction('getup') },
     { type: 'separator' },
@@ -183,13 +186,14 @@ if (!app.requestSingleInstanceLock()) {
     if (process.platform === 'darwin' && app.dock) app.dock.hide(); // 不在 Dock 里占位置
     loadStore();
     createWindow();
+    talk = require('./talk')({ app, getPetWindow: () => win, logError });
     startCursorWatch();
     screen.on('display-metrics-changed', () => send('screen-changed'));
     screen.on('display-removed', () => send('screen-changed'));
     if (TEST) {
       require('./test/driver').run({
         app, win, getStore: () => store, menuAction, menuTemplate, WIN_W, WIN_H,
-        setCursor: (fn) => { getCursor = fn; },
+        setCursor: (fn) => { getCursor = fn; }, talk,
         getKo: () => koState,
       });
     }
