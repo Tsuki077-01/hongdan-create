@@ -89,7 +89,7 @@ html, body {
   transition: opacity 160ms ease-out, transform 200ms cubic-bezier(.3, 1.6, .5, 1);
   pointer-events: none;
 }
-#bubble.long { white-space: pre-line; }
+#bubble.long { white-space: pre-line; width: max-content; } /* 不然只能用到窗口右半边的宽度 */
 #bubble::after {
   content: "";
   position: absolute;
@@ -126,4 +126,22 @@ html, body {
 #ko.show {
   opacity: 1;
   transform: translateX(-50%) scale(1) rotate(-8deg);
+}
+
+/* 截图用的小相机：从下面"噗"地举起来 */
+#camera {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transform: translateY(26px) scale(0.2);
+  opacity: 0;
+  transition: transform 300ms cubic-bezier(.3, 1.6, .5, 1), opacity 120ms;
+}
+#camera.up { transform: none; opacity: 1; }
+#camFlash { opacity: 0; transform-box: fill-box; transform-origin: 40% 70%; }
+#camera.flash #camFlash { animation: camflash 420ms ease-out; }
+#camera.flash #camBulb { fill: #fff; }
+@keyframes camflash {
+  0%   { opacity: 0; transform: scale(0.4); }
+  18%  { opacity: 1; transform: scale(1.15); }
+  100% { opacity: 0; transform: scale(1.5); }
 }

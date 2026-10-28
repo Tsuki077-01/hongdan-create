@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+  <title>咔嚓</title>
+  <style>
+    /* 截图时屏幕四边闪一下白光 */
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+    .flash {
+      position: fixed; inset: 0;
+      box-shadow: inset 0 0 70px 26px rgba(255, 255, 255, 0.95), inset 0 0 0 6px rgba(255, 255, 255, 0.9);
+      background: rgba(255, 255, 255, 0.12);
+      animation: flash 460ms ease-out forwards;
+    }
+    @keyframes flash {
+      0%   { opacity: 0; }
+      14%  { opacity: 1; }
+      100% { opacity: 0; }
+    }
+  </style>
+</head>
+<body><div class="flash"></div></body>
+</html>

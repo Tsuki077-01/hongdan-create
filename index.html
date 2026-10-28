@@ -60,6 +60,10 @@
             <path d="M29.5 65.5 L38.5 74.5 M38.5 65.5 L29.5 74.5"/>
             <path d="M61.5 65.5 L70.5 74.5 M70.5 65.5 L61.5 74.5"/>
           </g>
+          <!-- 截图时：右眼贴着取景器，左眼眯成一道弯 -->
+          <g data-v="wink" style="display:none" fill="none" stroke="#1E120D" stroke-width="2.4" stroke-linecap="round">
+            <path d="M28.5 72.5 Q34 66.5 39.5 72.5"/>
+          </g>
           <g data-v="cry" style="display:none">
             <!-- 泪汪汪：大黑眼珠 + 亮点，下眼眶一汪水 -->
             <path d="M23.5 76 Q34 83 44.5 76 Q42 82.5 34 82.5 Q26 82.5 23.5 76 Z" fill="#9FD3F2" opacity="0.85"/>
@@ -104,6 +108,30 @@
           <path data-v="wavy" style="display:none" d="M42.5 97 Q44.8 93.2 47.2 95.6 T52 94.4 T57.2 91.6"/>
           <path data-v="frown" style="display:none" d="M44.5 98.5 Q50 92.5 55.5 98.5"/>
           <ellipse data-v="o" style="display:none" cx="50" cy="96" rx="2.9" ry="3.4" fill="#7A2A16" stroke-width="2.2"/>
+        </g>
+
+        <!-- 小相机：截图时举到右眼前面，平时藏着 -->
+        <g id="camera">
+          <g filter="url(#sketch)" stroke="#8B3A1E" stroke-linejoin="round">
+            <rect x="55" y="57" width="10" height="6" rx="1.8" fill="#FFFBF7" stroke-width="2.2"/>
+            <rect x="48" y="61" width="40" height="26" rx="6" fill="#FFFBF7" stroke-width="2.8"/>
+            <path d="M48.5 69 H55 M81 69 H87.5" stroke-width="1.6" fill="none"/>
+            <rect id="camBulb" x="78" y="64" width="6.5" height="3.6" rx="1.2" fill="#F7A0AE" stroke-width="1.3"/>
+            <circle cx="68" cy="75" r="9" fill="#8B3A1E" stroke-width="1.5"/>
+          </g>
+          <circle cx="68" cy="75" r="5.4" fill="#2A140C"/>
+          <circle cx="70.3" cy="72.6" r="1.8" fill="#fff"/>
+          <circle cx="66" cy="77.4" r="0.8" fill="#fff" opacity="0.8"/>
+          <!-- 闪光：一圈亮光 + 几道光线 -->
+          <g id="camFlash">
+            <circle cx="81.2" cy="65.8" r="8" fill="#FFF6DD" opacity="0.95"/>
+            <g stroke="#FFC967" stroke-width="2.2" stroke-linecap="round" fill="none">
+              <path d="M81.2 52.5 V56.5"/>
+              <path d="M91.5 56 L88.6 58.9"/>
+              <path d="M94.5 65.8 H90.5"/>
+              <path d="M71 56 L73.8 58.9"/>
+            </g>
+          </g>
         </g>
       </g>
 

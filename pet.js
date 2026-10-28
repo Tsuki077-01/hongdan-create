@@ -16,6 +16,8 @@
   const HIT_LINES = ['坏女人也会疼的', '笨笨嘟倒下了', '软饭吐出来了', '今天第几顿了', '我错了我错了'];
   const CRY_LINES = ['呜呜 揍太多了', '呜呜呜……蛋壳要裂了', '再揍要变散黄蛋了 呜'];
   const THANKS = '谢谢 yyq，还是你心软';
+  const SHOT_LINES = ['拍好啦', '咔嚓，拍好啦', '拍好啦，在剪贴板里了'];
+  const SHOT_CANCEL_LINES = ['不拍了吗', '不拍了吗，那我收起来啦'];
 
   const $ = (id) => document.getElementById(id);
   const egg = $('egg'), wrap = $('wrap'), bubble = $('bubble'), koText = $('ko'), shadow = $('shadow');
@@ -192,7 +194,7 @@
   }
 
   // ---------- 表情：眼睛 / 嘴 / 眉毛，按优先级决定 ----------
-  let hitUntil = 0, talkUntil = 0, faceTimer = 0;
+  let hitUntil = 0, talkUntil = 0, winkUntil = 0, faceTimer = 0;
   function setVariant(group, name) {
     for (const el of $(group).children) {
       el.style.display = (el.dataset.v || '').split(' ').includes(name) ? '' : 'none';
@@ -205,13 +207,14 @@
     else if (S.crying) { eyes = 'cry'; mouth = 'frown'; brows = 'sad'; }
     else if (S.ko) { eyes = 'ko'; mouth = 'wavy'; }
     else if (now < hitUntil) { eyes = 'squint'; mouth = 'wavy'; }
+    else if (now < winkUntil) { eyes = 'wink'; }
     else if (now < talkUntil) { mouth = 'open'; }
     if (egg.dataset.eyes !== eyes) { setVariant('eyes', eyes); egg.dataset.eyes = eyes; }
     if (egg.dataset.mouth !== mouth) { setVariant('mouth', mouth); egg.dataset.mouth = mouth; }
     if (egg.dataset.brows !== brows) { setVariant('brows', brows); egg.dataset.brows = brows; }
     // 到点自动切回下一个表情
     clearTimeout(faceTimer);
-    const next = [hitUntil, talkUntil].filter((t) => t > now);
+    const next = [hitUntil, talkUntil, winkUntil].filter((t) => t > now);
     if (next.length) faceTimer = setTimeout(face, Math.min(...next) - now + 10);
   }
 
@@ -452,8 +455,9 @@
   function say(text, { talk = false } = {}) {
     const ms = 1600 + text.length * 110;
     // 长句在逗号处换行，不要剩一个字孤零零掉到第二行
-    const long = text.length > 13;
-    bubble.textContent = long ? text.replace(/([，,])/, '$1\n') : text;
+    // 已经自己分好行的（比如权限提示）就照原样
+    const long = text.length > 13 || text.includes('\n');
+    bubble.textContent = long && !text.includes('\n') ? text.replace(/([，,])/, '$1\n') : text;
     bubble.classList.toggle('long', long);
     bubble.classList.add('show');
     clearTimeout(bubbleTimer);
@@ -542,6 +546,15 @@
       }),
       // 被抓起来：短促的一声"咿"
       eek: play('eek', (c) => tone(c, { f0: 700, f1: 1100, dur: 0.14, vol: 0.04, lp: 2500 })),
+      // 举起相机：往上扬的一声"啵"
+      camUp: play('camUp', (c) => tone(c, { f0: 480, f1: 900, dur: 0.12, vol: 0.045, lp: 2600 })),
+      // 快门：清脆的"咔"，紧跟一声轻一点的"嚓"
+      shutter: play('shutter', (c) => {
+        noise(c, { dur: 0.035, vol: 0.4, lp: 7500 });
+        tone(c, { type: 'square', f0: 2400, f1: 1500, dur: 0.035, vol: 0.025, lp: 6000 });
+        noise(c, { at: 0.075, dur: 0.06, vol: 0.28, lp: 4200 });
+        tone(c, { f0: 1800, at: 0.2, dur: 0.06, vol: 0.02 });
+      }),
     };
   })();
 
@@ -550,6 +563,7 @@
 
   function onClick() {
     lastClickAt = Date.now();
+    window.pet.note('click');
     if (S.tripping || S.mode === 'roll') { cancelTrip(); if (!S.ko) settleUpright(); }
     if (S.ko || S.crying) { wobble(3, 400); return; }
     wobble(12);
@@ -588,6 +602,7 @@
 
   function knockOut() {
     S.ko = true;
+    window.pet.note('ko');
     needHelp();
     clearTimeout(behaviorTimer);
     cancelTrip();
@@ -614,6 +629,7 @@
   function startCry() {
     if (S.crying) return;
     S.crying = true;
+    window.pet.note('cry');
     needHelp();
     clearTimeout(behaviorTimer);
     cancelTrip();
@@ -654,6 +670,7 @@
     }
   }
   function thanks() {
+    window.pet.note('getup');
     face();
     wobble(6, 600);
     sound.getup();
@@ -707,6 +724,7 @@
     if (!S.ko) settleUpright();
     hopY = 0;
     S.scared = true; // 被抓起来：害怕
+    window.pet.note('drag');
     face();
     sound.eek();
     window.pet.dragStart(down.cx, down.cy);
@@ -726,10 +744,59 @@
     startFall(); // 落地时 stepFall 里恢复正常表情
   }
 
+  // ---------- 截图：举起小相机，眯一只眼，咔嚓 ----------
+  const cam = $('camera');
+  let cameraBusy = false, camDownTimer = 0;
+  async function camera() {
+    if (cameraBusy) return;
+    cameraBusy = true;
+    lastClickAt = Date.now();
+    clearTimeout(behaviorTimer);
+    clearTimeout(camDownTimer);
+    if (S.tripping || S.mode === 'roll') cancelTrip();
+    if (!S.ko) settleUpright();
+    idleLook = [0, 0];
+    cam.classList.add('up');
+    sound.camUp();
+    wobble(4, 400);
+    await wait(480);
+    // 咔嚓：闪光灯一亮，屏幕边缘闪白光，眼睛眯一下，身子轻轻一震
+    cam.classList.add('flash');
+    sound.shutter();
+    window.pet.flash();
+    winkUntil = Date.now() + 420;
+    face();
+    squashOnce(0.05);
+    await wait(520);
+    cam.classList.remove('flash');
+    window.pet.cameraReady(); // 主进程这时把红蛋藏起来，开始截图
+  }
+  function shotDone(r) {
+    cameraBusy = false;
+    r = r || {};
+    clearTimeout(camDownTimer);
+    camDownTimer = setTimeout(() => cam.classList.remove('up'), r.ok ? 1100 : 350);
+    lastClickAt = Date.now();
+    if (r.ok) { wobble(8, 700); sound.gulu(); say(pick(SHOT_LINES), { talk: true }); }
+    else if (r.cancelled) say(pick(SHOT_CANCEL_LINES), { talk: true });
+    else if (r.error) say(r.error);
+    if (!S.ko && !S.crying) scheduleNext(4000);
+  }
+
   // ---------- 来自主进程 ----------
   window.pet.onAction((a, arg) => {
     if (a === 'punch') punch(arg);
     else if (a === 'getup') getUp();
+    else if (a === 'camera') camera();
+  });
+  window.pet.onShotDone((r) => shotDone(r));
+  // 主进程要红蛋说一句完整的话（比如提醒开权限、小克回信了）
+  window.pet.onSay((text) => {
+    const t = String(text || '').trim();
+    if (!t) return;
+    lastClickAt = Date.now();
+    if (!S.ko && !S.crying) wobble(6, 600);
+    say(t, { talk: !S.ko && !S.crying });
   });
   window.pet.onMuted((m) => { S.muted = m; });
   // 聊天窗口里红蛋回话了：蛋头上也冒个气泡、张嘴说话（太长的只冒开头，全文在聊天窗口里）
@@ -760,7 +827,7 @@
 
   // 测试用：让自动化测试读取内部状态、直接触发某个动作
   window.__pet = {
-    S, onClick, punch, getUp, say, overEgg, trip, hop, startCry, render, cancelTrip,
+    S, onClick, punch, getUp, say, overEgg, trip, hop, startCry, render, cancelTrip, camera,
     set autopilot(v) { autopilot = v; },
     get dragging() { return dragging; }, get looping() { return !!raf; },
     get angle() { return curAngle; }, get hopY() { return hopY; }, get near() { return near; },

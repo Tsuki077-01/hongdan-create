@@ -1,5 +1,5 @@
 // 红蛋桌宠 —— 主进程：窗口、右键菜单、计数存档、拖拽跟随
-const { app, BrowserWindow, Menu, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, Menu, globalShortcut, ipcMain, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -9,6 +9,12 @@ const TEST = process.env.HONGDAN_TEST === '1';
 
 let win = null;
 let talk = null; // 跟红蛋说话（talk.js）
+let shot = null; // 截图（screenshot.js）
+let journal = null; // 红蛋的工作日记（journal.js）
+
+// 截图快捷键：⌃⇧⌥S，被别的 App 占了就换 ⌃⇧⌥P
+const SHOT_KEYS = ['Control+Shift+Alt+S', 'Control+Shift+Alt+P'];
+let shotKey = null;
 
 // ---------- 存档：今日被揍次数 + 静音 ----------
 const storePath = () => path.join(app.getPath('userData'), 'hongdan.json');
@@ -90,6 +96,7 @@ function menuTemplate() {
   rollDay();
   return [
     { label: '跟红蛋说话', click: () => talk && talk.openChat() },
+    { label: '截图', accelerator: shotKey || undefined, registerAccelerator: false, click: () => shot && shot.take() },
     { type: 'separator' },
     { label: '揍', click: () => menuAction('punch') },
     { label: '扶起来', enabled: koState, click: () => menuAction('getup') },
@@ -165,6 +172,7 @@ ipcMain.on('move', (_e, x, y) => {
   win.setPosition(Math.round(x) | 0, Math.round(y) | 0);
 });
 ipcMain.on('log', (_e, msg) => logError(msg));
+ipcMain.on('note', (_e, what) => journal && journal.note(what)); // 红蛋做了什么动作，记进今天的日记
 ipcMain.on('menu', () => showMenu());
 ipcMain.on('drag-start', (_e, offX, offY) => startDrag(offX, offY));
 ipcMain.handle('drag-end', () => { stopDrag(); return win.getBounds(); });
@@ -178,6 +186,14 @@ ipcMain.handle('init', () => ({
 ipcMain.handle('work-area', (_e, x, y) =>
   screen.getDisplayNearestPoint({ x: Math.round(x + WIN_W / 2), y: Math.round(y + WIN_H / 2) }).workArea);
 
+function registerShotKey() {
+  for (const k of SHOT_KEYS) {
+    try { if (globalShortcut.register(k, () => shot && shot.take())) { shotKey = k; return; } } catch (_) {}
+    logError('截图快捷键 ' + k + ' 被占用了，换下一个');
+  }
+  logError('截图快捷键都被占用了，只能从右键菜单截图');
+}
+
 // ---------- 启动 ----------
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -187,16 +203,24 @@ if (!app.requestSingleInstanceLock()) {
     loadStore();
     createWindow();
     talk = require('./talk')({ app, getPetWindow: () => win, logError });
+    shot = require('./screenshot')({
+      app, logError,
+      getPetWindow: () => win,
+      getChatWindow: () => talk.getChatWindow(),
+      onShot: (what) => journal && journal.note(what),
+    });
+    if (!TEST) registerShotKey();
     startCursorWatch();
     screen.on('display-metrics-changed', () => send('screen-changed'));
     screen.on('display-removed', () => send('screen-changed'));
     if (TEST) {
       require('./test/driver').run({
         app, win, getStore: () => store, menuAction, menuTemplate, WIN_W, WIN_H,
-        setCursor: (fn) => { getCursor = fn; }, talk,
+        setCursor: (fn) => { getCursor = fn; }, talk, shot,
         getKo: () => koState,
       });
     }
   });
   app.on('window-all-closed', () => app.quit());
+  app.on('will-quit', () => globalShortcut.unregisterAll());
 }
