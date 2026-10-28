@@ -791,9 +791,11 @@
   });
   window.pet.onShotDone((r) => shotDone(r));
   // 主进程要红蛋说一句完整的话（比如提醒开权限、小克回信了）
+  const sayLog = (window.__sayLog = []); // 测试用
   window.pet.onSay((text) => {
     const t = String(text || '').trim();
     if (!t) return;
+    sayLog.push(t);
     lastClickAt = Date.now();
     if (!S.ko && !S.crying) wobble(6, 600);
     say(t, { talk: !S.ko && !S.crying });

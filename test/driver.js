@@ -7,7 +7,7 @@ const HIT_LINES = ['坏女人也会疼的', '笨笨嘟倒下了', '软饭吐出�
 const CRY_LINES = ['呜呜 揍太多了', '呜呜呜……蛋壳要裂了', '再揍要变散黄蛋了 呜'];
 const GAZE_MAX = 5.5;
 
-exports.run = async ({ app, win, getStore, menuAction, menuTemplate, setCursor, getKo, talk, shot: shotter }) => {
+exports.run = async ({ app, win, getStore, menuAction, menuTemplate, setCursor, getKo, talk, shot: shotter, journal }) => {
   const outDir = process.env.HONGDAN_SHOTS || path.join(__dirname, 'shots');
   const only = process.env.HONGDAN_ONLY; // 只跑某一组，调试用
   fs.mkdirSync(outDir, { recursive: true });
@@ -399,6 +399,10 @@ exports.run = async ({ app, win, getStore, menuAction, menuTemplate, setCursor, 
 
     if (wantGroup('shot')) {
       await require('./shot-tests').run({ win, shot: shotter, menuTemplate, check, sleep, waitFor, js, shotImg: shot, outDir });
+    }
+
+    if (wantGroup('memory')) {
+      await require('./memory-tests').run({ talk, journal, check, sleep, waitFor, js });
     }
 
     if (wantGroup('chaos')) {

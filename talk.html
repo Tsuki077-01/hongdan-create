@@ -102,6 +102,17 @@
       </div>
       <div class="note">key 加密存在这台 Mac 上，只发给上面填的那个地址。换了平台记得换成那家的 key。</div>
 
+      <h3>记忆库令牌</h3>
+      <div id="memState" class="note"></div>
+      <input id="memToken" type="password" placeholder="把红蛋的记忆库令牌贴在这里" autocomplete="off" spellcheck="false">
+      <input id="memUrl" type="text" placeholder="记忆库地址" autocomplete="off" spellcheck="false" style="margin-top:6px">
+      <div class="row">
+        <button class="main" id="saveMem">保存</button>
+        <button id="testMem">试试连接</button>
+        <button id="delMem">删掉令牌</button>
+      </div>
+      <div class="note">令牌也加密存在这台 Mac 上。红蛋只能写自己那一格（工作日记、给小克的留言），别的书架只能看。截图不会进记忆库。</div>
+
       <h3>聊天记录</h3>
       <div class="row"><button id="clear">清空</button></div>
       <div class="note">每次说话会带上最近二十几句，记录越长越费一点点钱。</div>
@@ -157,10 +168,32 @@
       $('url').value = st.cfg.url;
       $('modelName').value = st.cfg.model;
       $('cfgState').textContent = '';
+      showMem();
       fillModels([], '');
       if (st.hasKey && st.cfg.url) loadModels();
     } else input.focus();
   }
+
+  // ---------- 记忆库令牌 ----------
+  function showMem(msg, ok) {
+    const m = st.mem || {};
+    $('memUrl').value = m.url || '';
+    $('memState').textContent = msg || (m.hasToken ? '已经存好了一个令牌（看不到内容）' : '还没有令牌，不填也能聊天，只是不写日记、不能给小克写信');
+    $('memState').className = 'note' + ((msg ? ok : m.hasToken) ? ' ok' : '');
+  }
+  $('saveMem').onclick = async () => {
+    const t = $('memToken').value.trim();
+    if (/\s/.test(t)) { showMem('令牌里不应该有空格或换行，再复制一次试试'); return; }
+    const r = await window.talk.setMem({ url: $('memUrl').value, ...(t ? { token: t } : {}) });
+    $('memToken').value = '';
+    st.mem = r.mem;
+    if (!r.ok) { showMem(r.error); return; }
+    showMem('存好了，正在试连接……', true);
+    const t2 = await window.talk.testMem();
+    showMem(t2.msg, t2.ok);
+  };
+  $('testMem').onclick = async () => { showMem('正在试……', true); const r = await window.talk.testMem(); showMem(r.msg, r.ok); };
+  $('delMem').onclick = async () => { const r = await window.talk.setMem({ token: '' }); st.mem = r.mem; showMem(); };
 
   // ---------- 模型下拉框 ----------
   const sel = $('modelSel');
@@ -252,7 +285,11 @@
     log.appendChild(typing); log.scrollTop = log.scrollHeight;
     const r = await window.talk.ask(text);
     typing.remove();
-    if (r.ok) { add('egg', r.reply); st.history.push({ role: 'user', content: text }, { role: 'assistant', content: r.reply }); }
+    if (r.ok) {
+      add('egg', r.reply);
+      for (const n of r.notes || []) add('sys', n);
+      st.history.push({ role: 'user', content: text }, { role: 'assistant', content: r.reply });
+    }
     else {
       add('sys', r.error || '没说出去');
       input.value = text; // 没发出去的话放回输入框

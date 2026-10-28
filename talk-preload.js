@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld('talk', {
   setKey: (key) => ipcRenderer.invoke('talk:set-key', String(key)),
   setCfg: (c) => ipcRenderer.invoke('talk:set-cfg', c),
   models: (c) => ipcRenderer.invoke('talk:models', c),
+  setMem: (c) => ipcRenderer.invoke('mem:set', c),
+  testMem: () => ipcRenderer.invoke('mem:test'),
   clear: () => ipcRenderer.invoke('talk:clear'),
   close: () => ipcRenderer.send('talk:close'),
 });

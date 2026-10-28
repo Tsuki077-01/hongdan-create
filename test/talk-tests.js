@@ -67,6 +67,13 @@ exports.run = async ({ app, win, talk, check, sleep, waitFor, js }) => {
   await sleep(400);
   const st = await cj('talk.state()');
   check('在下拉框里选了就保存', st.cfg.model === 'claude-test-2', st.cfg.model);
+  if (process.env.HONGDAN_SHOTS) {
+    fs.writeFileSync(path.join(process.env.HONGDAN_SHOTS, '30-settings-top.png'), (await chat.webContents.capturePage()).toPNG());
+    await cj(`document.getElementById('settings').scrollTop = 9999; 0`);
+    await sleep(200);
+    fs.writeFileSync(path.join(process.env.HONGDAN_SHOTS, '31-settings-bottom.png'), (await chat.webContents.capturePage()).toPNG());
+    await cj(`document.getElementById('settings').scrollTop = 0; 0`);
+  }
   check('手填输入框还在（后备）', await cj(`document.getElementById('modelName').value === 'claude-test-2' && document.getElementById('modelName').offsetParent !== null`));
 
   // ---- 说话 ----

@@ -116,6 +116,7 @@ function menuAction(name) {
     rollDay();
     store.hits += 1;
     saveStore();
+    if (journal) journal.note('punch');
     send('action', 'punch', store.hits);
   } else if (name === 'getup') {
     send('action', 'getup');
@@ -202,21 +203,30 @@ if (!app.requestSingleInstanceLock()) {
     if (process.platform === 'darwin' && app.dock) app.dock.hide(); // 不在 Dock 里占位置
     loadStore();
     createWindow();
-    talk = require('./talk')({ app, getPetWindow: () => win, logError });
+    const memory = require('./memory')({ app, logError });
+    journal = require('./journal')({ app, memory, logError });
+    talk = require('./talk')({ app, getPetWindow: () => win, logError, memory, journal });
     shot = require('./screenshot')({
       app, logError,
       getPetWindow: () => win,
       getChatWindow: () => talk.getChatWindow(),
       onShot: (what) => journal && journal.note(what),
     });
-    if (!TEST) registerShotKey();
+    if (!TEST) {
+      registerShotKey();
+      // 启动时：昨天的日记收个尾，读最近的日记和小克的回信；有新回信就冒个气泡
+      if (memory.configured()) {
+        journal.flush();
+        journal.loadContext().then(() => setTimeout(() => talk.mentionNewReply(), 6000));
+      }
+    }
     startCursorWatch();
     screen.on('display-metrics-changed', () => send('screen-changed'));
     screen.on('display-removed', () => send('screen-changed'));
     if (TEST) {
       require('./test/driver').run({
         app, win, getStore: () => store, menuAction, menuTemplate, WIN_W, WIN_H,
-        setCursor: (fn) => { getCursor = fn; }, talk, shot,
+        setCursor: (fn) => { getCursor = fn; }, talk, shot, memory, journal,
         getKo: () => koState,
       });
     }

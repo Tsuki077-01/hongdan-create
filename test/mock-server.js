@@ -60,7 +60,12 @@ exports.start = () => new Promise((resolve) => {
           const limit = +q.limit || 10;
           return send(res, 200, { results: rows.slice(0, limit).map(out), total: rows.length, has_more: rows.length > limit });
         }
-        if (p === '/hongdan/recall') return send(res, 200, { results: pick(q).filter((m) => m.content.includes(q.query || '')).slice(0, 5).map(out) });
+        if (p === '/hongdan/recall') {
+          // 假装"按意思搜"：有任意两个字连着对上就算
+          const qq = String(q.query || '');
+          const grams = [...qq].map((_, i) => qq.slice(i, i + 2)).filter((g) => g.length === 2);
+          return send(res, 200, { results: pick(q).filter((m) => grams.some((g) => m.content.includes(g))).slice(0, 5).map(out) });
+        }
         if (p === '/hongdan/remember') {
           const m = { id: nextId++, category: '红蛋·自己', subcategory: body.subcategory, layer: body.layer || '摘要', date: body.date, content: body.content };
           mem.push(m);
